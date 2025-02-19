@@ -24,6 +24,7 @@ def get_day_name():
     daymonth = dt.strftime(f"{'%d'}/{'%m'}")
     year = dt.strftime(f"{'%Y'}")
     full_year = dt.strftime(f"{'%Y'}-{'%m'}-{'%d'}")
+
     return day_name, daymonth, year, full_year
 
 day_name, daymonth, year, full_year = get_day_name()
@@ -44,39 +45,42 @@ def get_weather():
 
 max_temp, min_temp, condition , rain_chance, snow_chance = get_weather()
 
-
 def funfact_call(FACT_KEY):
     api_url = 'https://api.api-ninjas.com/v1/facts'
     response = requests.get(api_url, headers={'X-Api-Key': FACT_KEY})
     if response.status_code == requests.codes.ok:
         data = response.json()
-        funfact_text = data[0]['fact']
-        # print(response.text)
-        return funfact_text
+        return data[0]['fact']
     else:
-        return response.text
-        # print("Error:", response.status_code, response.text)
+        print(f"API error: {response.status_code}")
+        return None
 
 def save_fact(fact):
     with open(f"{MAIN_PATH}/fact_data.txt", "a") as f:
         f.write(f'{fact}\n')
-    print(f'File saved {fact}')
+    print(f'File saved: {fact}')
+
+def load_existing_facts():
+    try:
+        with open(f"{MAIN_PATH}/fact_data.txt", "r") as f:
+            return set(f.read().splitlines())
+    except FileNotFoundError:
+        return set()
 
 def checker_fact():
-    duplicate = True
-    while duplicate: 
+    existing_facts = load_existing_facts()
+    attempts = 0
+    fact = funfact_call(FACT_KEY)
+    while (fact in existing_facts or fact is None) and attempts < 5:
+        print('Duplicate found or API error. Generating new fact...')
         fact = funfact_call(FACT_KEY)
-        with open(f"{MAIN_PATH}/fact_data.txt") as f:
-            facts = f.readlines()
-            if fact in facts:
-                print('Duplicates found \nGen new fact')
-                fact = funfact_call(FACT_KEY)
-                save_fact(fact)
-            else:
-                print('No duplicates found')
-                save_fact(fact)
-                duplicate = False
-                return fact
+        attempts += 1
+    if fact and fact not in existing_facts:
+        save_fact(fact)
+        return fact
+    else:
+        print("Failed to generate a unique fact after 5 attempts.")
+        return None
 
 fact = checker_fact()
 
@@ -97,7 +101,7 @@ def get_calendar_data(year):
         response = requests.get(api_url)
         if response.status_code == requests.codes.ok:
             data = response.json()
-            with open(f'calendar-{year}.json', 'w', encoding='utf-8') as f:
+            with open(f'{MAIN_PATH}/calendar-{year}.json', 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
         else:
             print("Error:", response.status_code, response.text)
@@ -111,7 +115,7 @@ def check_holiday(holidays, full_year):
             return holiday["name"]
     return None
 
-with open("calendar-2024.json", "r") as file:
+with open(f"{MAIN_PATH}/calendar-{year}.json", "r") as file:
     holiday_data = json.load(file)
     
 holidays = holiday_data["response"]["holidays"]
@@ -134,7 +138,7 @@ def generate_prompt(prompt_key, **kwargs):
 
 
 weather_message = generate_prompt(
-    "weather_girl",
+    "weather_caster",
     max_temp=max_temp,
     min_temp=min_temp,
     condition=condition,
@@ -144,7 +148,8 @@ weather_message = generate_prompt(
     traits=traits
 )
 
-birthday_message = generate_prompt("birthday_wishes", 
+birthday_message = generate_prompt(
+    "birthday_wishes", 
     name=birthday,
     max_temp=max_temp,
     min_temp=min_temp,
@@ -154,7 +159,10 @@ birthday_message = generate_prompt("birthday_wishes",
     day_name=day_name,
     traits=traits)
 
-holiday_message = generate_prompt("holiday_greetings", traits=traits, holiday_name=holiday_name)
+holiday_message = generate_prompt(
+    "holiday_greetings", 
+    traits=traits, 
+    holiday_name=holiday_name)
 
 
 def api_chatgpt_text(OPENAI_API, birthday, holiday_name):
@@ -173,7 +181,8 @@ def api_chatgpt_text(OPENAI_API, birthday, holiday_name):
 
 
     completion = openai.chat.completions.create(
-    model="gpt-3.5-turbo",
+    #model="gpt-3.5-turbo",
+    model="gpt-4o",
     messages=[
         {
             "role": "user",
@@ -186,7 +195,7 @@ def api_chatgpt_text(OPENAI_API, birthday, holiday_name):
 
 gpt_answer = api_chatgpt_text(OPENAI_API, birthday, holiday_name)
 
-print(gpt_answer)
+# print(gpt_answer)
 
 def convert_messege(text):
     normalized_text = unicodedata.normalize('NFC', text)
